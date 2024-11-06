@@ -1,0 +1,75 @@
+{
+  "display": {
+    "fancy": true,
+    "useIcons": false,
+    "useColors": true,
+    "showSize": false,
+    "showStats": false,
+    "showRoot": false,
+    "fullPath": false
+  },
+  "sorting": {
+    "enabled": true,
+    "default": "directory-first"
+  },
+  "filtering": {
+    "maxDepth": null,
+    "exclude": [
+      "node_modules",
+      ".git",
+      ".DS_Store",
+      "*.log",
+      "*.tmp"
+    ],
+    "include": []
+  },
+  "export": {
+    "defaultFormat": "ascii",
+    "outputDir": "./",
+    "timestamp": false
+  },
+  "fileTypes": {
+    "image": [
+      ".jpg",
+      ".jpeg",
+      ".png",
+      ".gif",
+      ".svg",
+      ".webp"
+    ],
+    "video": [
+      ".mp4",
+      ".mov",
+      ".avi",
+      ".mkv",
+      ".webm"
+    ],
+    "audio": [
+      ".mp3",
+      ".wav",
+      ".ogg",
+      ".m4a"
+    ],
+    "archive": [
+      ".zip",
+      ".rar",
+      ".7z",
+      ".tar",
+      ".gz"
+    ],
+    "pdf": [
+      ".pdf"
+    ],
+    "code": [
+      ".js",
+      ".ts",
+      ".py",
+      ".java",
+      ".cpp",
+      ".html",
+      ".css",
+      ".json",
+      ".xml"
+    ]
+  }
+}

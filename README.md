@@ -193,5 +193,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 MIT
 
 ## Author
-
 Rick Knowlton | tiny.
+
+<p align="center">Made with ☕️ by <a href="https://wearetiny.io">tiny.</a></p>

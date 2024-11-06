@@ -1,4 +1,3 @@
-DEBUG=true poplr
 # 🌳 Poplr
 
 A flexible and fun directory tree generator for the command line.
@@ -68,13 +67,21 @@ poplr tree -f markdown
 ```
 
 Available options:
-- `-f, --format <type>` - Output format (ascii, markdown)
+- `-f, --format <type>` - Output format (ascii, markdown, txt, json, html)
 - `-d, --max-depth <number>` - Maximum depth to traverse
 - `-s, --show-size` - Show file sizes
 - `-p, --full-path` - Show full paths
 - `-r, --show-root` - Show root directory
 - `--stats` - Show directory summary
 - `--sort <type>` - Sort by (name, type, size, extension)
+
+```bash
+# Export examples
+poplr tree -f markdown > tree.md
+poplr tree -f html > tree.html
+poplr tree -f json > tree.json
+poplr tree -f txt > tree.txt
+```
 
 ### Configuration
 
@@ -132,7 +139,17 @@ poplr config
 └── package.json
 ```
 
-#### Markdown
+#### Text File (.txt)
+The same as console output but saved to a text file:
+```
+├── src/
+│   ├── index.js
+│   └── utils/
+│       └── helper.js
+└── package.json
+```
+
+#### Markdown (.md)
 ```markdown
 ## Directory Structure
 
@@ -143,11 +160,35 @@ poplr config
 * package.json
 ```
 
+#### HTML
+Generates a styled HTML page with the tree structure:
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Directory Tree</title>
+</head>
+<body>
+    <pre>
+    ├── src/
+    │   ├── index.js
+    │   └── utils/
+    │       └── helper.js
+    └── package.json
+    </pre>
+</body>
+</html>
+```
+
 #### JSON
 ```json
 {
   "generated": "2024-11-05T20:19:05.327Z",
-  "config": {...},
+  "config": {
+    "format": "json",
+    "showSize": true,
+    ...
+  },
   "tree": "..."
 }
 ```

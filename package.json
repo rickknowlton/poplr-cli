@@ -9,12 +9,12 @@
     "scripts": {
         "start": "node src/cli.js",
         "prepublishOnly": "npm test",
-        "postinstall": "node -e \"console.log('\\n🌳 Thanks for installing poplr! Run `poplr` to get started.\\n')\"",
         "test": "echo \"No tests specified\" && exit 0",
         "prepare": "husky install",
         "lint": "eslint src/**/*.js",
         "lint:fix": "eslint src/**/*.js --fix",
-        "lint:report": "eslint src/**/*.js --output-file eslint-report.json --format json"
+        "lint:report": "eslint src/**/*.js --output-file eslint-report.json --format json",
+        "postinstall": "echo '\n🌳 Thanks for installing poplr! Run `poplr` to get started.\n'"
     },
     "lint-staged": {
         "*.js": [

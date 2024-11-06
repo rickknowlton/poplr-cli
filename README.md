@@ -147,7 +147,7 @@ poplr config
 ```json
 {
   "generated": "2024-11-05T20:19:05.327Z",
-  "config": { ... },
+  "config": {...},
   "tree": "..."
 }
 ```

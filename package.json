@@ -1,6 +1,6 @@
 {
     "name": "poplr",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "A flexible and fun directory tree generator",
     "main": "src/tree-generator.js",
     "bin": {

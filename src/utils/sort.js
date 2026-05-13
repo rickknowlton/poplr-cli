@@ -33,7 +33,7 @@ function sortItems(items, sortBy = 'directory-first', stats = new Map()) {
             return a.localeCompare(b);
 
         default:
-            return sortItems(items, 'directory-first', stats);
+            return a.localeCompare(b);
         }
     });
 }

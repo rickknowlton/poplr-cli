@@ -36,12 +36,17 @@ class TreeGenerator {
 
         this.options = {
             format: options.format || 'ascii',
-            maxDepth: options.maxDepth || Infinity,
+            maxDepth: options.maxDepth != null && !Number.isNaN(Number(options.maxDepth))
+                ? Number(options.maxDepth)
+                : Infinity,
             showSize: options.showSize || false,
             fullPath: options.fullPath || false,
             showRoot: options.showRoot || false,
             fancy: options.fancy !== false,
             exclude: options.exclude || [/node_modules/, /\.git/, /\.DS_Store/],
+            include: Array.isArray(options.include) && options.include.length > 0
+                ? options.include
+                : null,
             useColors: options.useColors && options.format === 'console',
             showStats: options.showStats === true,
             useIcons: options.useIcons === true,
@@ -86,6 +91,16 @@ class TreeGenerator {
             if (extensions.includes(ext)) return type;
         }
         return 'default';
+    }
+
+    matchesPattern(name, pattern) {
+        if (pattern instanceof RegExp) return pattern.test(name);
+        if (pattern.includes('*') || pattern.includes('?')) {
+            const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+            const globRe = new RegExp('^' + escaped.replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
+            return globRe.test(name);
+        }
+        return name === pattern;
     }
 
     getSymbols() {
@@ -177,37 +192,46 @@ class TreeGenerator {
             return '';
         }
 
-        const itemStats = new Map();
+        const statsCache = new Map();
         await Promise.all(items.map(async (item) => {
             const itemPath = path.join(currentPath, item);
-            const stats = await this.getItemStats(itemPath);
-            itemStats.set(item, stats);
-
-            if (stats.isDirectory) {
-                this.stats.addDirectory(depth);
-            } else {
-                this.stats.addFile(itemPath, stats.size);
-            }
+            statsCache.set(item, await this.getItemStats(itemPath));
         }));
 
-        const filteredItems = items.filter(item =>
-            !this.options.exclude.some(pattern =>
-                typeof pattern === 'string' ? item === pattern : pattern.test(item)
-            )
-        );
+        const filteredItems = items.filter(item => {
+            const excluded = this.options.exclude.some(pattern => this.matchesPattern(item, pattern));
+            if (excluded) return false;
+            if (this.options.include) {
+                const itemStat = statsCache.get(item);
+                if (!itemStat.isDirectory) {
+                    return this.options.include.some(pattern => this.matchesPattern(item, pattern));
+                }
+            }
+            return true;
+        });
 
-        const sortedItems = sortItems(filteredItems, this.options.sortBy, itemStats);
+        filteredItems.forEach(item => {
+            const itemPath = path.join(currentPath, item);
+            const stat = statsCache.get(item);
+            if (stat.isDirectory) {
+                this.stats.addDirectory(depth);
+            } else {
+                this.stats.addFile(itemPath, stat.size);
+            }
+        });
+
+        const sortedItems = sortItems(filteredItems, this.options.sortBy, statsCache);
 
         for (let i = 0; i < sortedItems.length; i++) {
             const item = sortedItems[i];
             const itemPath = path.join(currentPath, item);
             const isLast = i === sortedItems.length - 1;
-            const itemStats = await this.getItemStats(itemPath);
+            const itemStat = statsCache.get(item);
             const displayName = this.options.fullPath ? itemPath : item;
 
-            output += this.formatItem(displayName, isLast, prefix, itemStats) + '\n';
+            output += this.formatItem(displayName, isLast, prefix, itemStat) + '\n';
 
-            if (itemStats.isDirectory) {
+            if (itemStat.isDirectory) {
                 const newPrefix = this.options.format === 'markdown'
                     ? prefix + this.symbols.indent
                     : prefix + (isLast ? this.symbols.indent : this.symbols.pipe + '   ');

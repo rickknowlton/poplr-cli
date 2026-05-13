@@ -266,12 +266,28 @@ function setupCommands(userConfig) {
         .option('--sort <type>', 'sort by (name, type, size, extension)', userConfig.sorting.default)
         .action(async (options) => {
             try {
+                const maxDepth = options.maxDepth != null ? Number(options.maxDepth) : null;
+                const format = options.format || userConfig.export.defaultFormat || 'ascii';
                 const treeOutput = await generateTree(process.cwd(), {
-                    ...options,
-                    format: 'console',
-                    exclude: userConfig.filtering.exclude
+                    fancy: userConfig.display.fancy,
+                    useColors: format === 'console' && userConfig.display.useColors,
+                    useIcons: userConfig.display.useIcons,
+                    showRoot: options.showRoot,
+                    showSize: options.showSize,
+                    fullPath: options.fullPath,
+                    showStats: options.stats,
+                    sortBy: options.sort || userConfig.sorting.default,
+                    maxDepth: maxDepth !== null && !Number.isNaN(maxDepth) ? maxDepth : Infinity,
+                    exclude: userConfig.filtering.exclude,
+                    include: userConfig.filtering.include,
+                    format
                 });
-                console.log(treeOutput);
+
+                if (format === 'json') {
+                    console.log(JSON.stringify(treeOutput, null, 2));
+                } else {
+                    console.log(treeOutput);
+                }
             } catch (error) {
                 console.error(chalk.red('Error:'), error.message);
                 process.exit(1);

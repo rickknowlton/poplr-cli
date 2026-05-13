@@ -28,6 +28,17 @@ class TreeStats {
         return ((Date.now() - this.startTime) / 1000).toFixed(2);
     }
 
+    getStatsObject() {
+        return {
+            totalFiles: this.totalFiles,
+            totalDirs: this.totalDirs,
+            totalSize: this.totalSize,
+            maxDepthReached: this.maxDepthReached,
+            scanTimeSeconds: parseFloat(this.getTimeTaken()),
+            fileTypes: Object.fromEntries(this.fileTypes)
+        };
+    }
+
     getSummary(useColors = true) {
         const c = useColors ? chalk : {
             bold: (x) => x,

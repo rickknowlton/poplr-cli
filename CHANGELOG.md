@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `figlet` dependency updated to 1.11.0
 - `nanospinner` dependency updated to 1.2.2
 
+
+## [1.0.1] - 2024-11-09
+
+### Updated
+- Added more details and methods to README
+
 ## [1.0.0] - 2024-11-06
 
 ### Added
@@ -39,8 +45,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Filtering capabilities for files and directories
 - Color-coded output for better visibility
 - Support for infinite or limited depth traversal
-
-## [1.0.1] - 2024-11-09
-
-### Updated
-- Added more details and methods to README

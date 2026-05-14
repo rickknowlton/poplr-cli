@@ -7,6 +7,14 @@ module.exports = {
     'parserOptions': {
         'ecmaVersion': 2022
     },
+    'overrides': [
+        {
+            'files': ['tests/**/*.test.js'],
+            'env': {
+                'jest': true
+            }
+        }
+    ],
     'rules': {
         'indent': ['error', 4],
         'linebreak-style': ['error', 'unix'],

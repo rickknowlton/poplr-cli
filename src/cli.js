@@ -52,7 +52,8 @@ const DEFAULT_CONFIG = {
     filtering: {
         maxDepth: null,
         exclude: ['node_modules', '.git', '.DS_Store'],
-        include: ['README.md']
+        include: [],
+        respectGitignore: true
     },
     export: {
         defaultFormat: 'ascii',
@@ -205,6 +206,8 @@ async function handleQuickTree(config) {
             showRoot: config.display.showRoot === true,
             fancy: config.display.fancy !== false,
             exclude: config.filtering.exclude,
+            include: config.filtering.include,
+            respectGitignore: config.filtering.respectGitignore !== false,
             sortBy: config.sorting.default
         };
 
@@ -257,20 +260,32 @@ function setupCommands(userConfig) {
     program
         .command('tree')
         .description('Generate a directory tree')
-        .option('-f, --format <type>', 'output format (ascii, markdown)', userConfig.export.defaultFormat)
+        .option('-f, --format <type>', 'output format (ascii, markdown, json, html)', userConfig.export.defaultFormat)
+        .option('-o, --output <path>', 'write output to a file (format inferred from extension if -f not set)')
         .option('-d, --max-depth <number>', 'maximum depth to traverse', userConfig.filtering.maxDepth)
         .option('-s, --show-size', 'show file sizes', userConfig.display.showSize)
         .option('-p, --full-path', 'show full paths', userConfig.display.fullPath)
         .option('-r, --show-root', 'show root directory', userConfig.display.showRoot)
         .option('--stats', 'show directory summary', userConfig.display.showStats)
-        .option('--sort <type>', 'sort by (name, type, size, extension)', userConfig.sorting.default)
+        .option('--sort <type>', 'sort by (name, type, size, extension, directory-first)', userConfig.sorting.default)
+        .option('--no-gitignore', 'do not respect .gitignore rules')
         .action(async (options) => {
             try {
                 const maxDepth = options.maxDepth != null ? Number(options.maxDepth) : null;
-                const format = options.format || userConfig.export.defaultFormat || 'ascii';
+
+                let format = options.format || userConfig.export.defaultFormat || 'ascii';
+                if (options.output && !options.format) {
+                    const ext = path.extname(options.output).slice(1).toLowerCase();
+                    const extMap = { md: 'markdown', json: 'json', html: 'html', txt: 'ascii' };
+                    if (extMap[ext]) format = extMap[ext];
+                }
+
+                // HTML is a post-processing wrapper around plain ASCII output
+                const generatorFormat = format === 'html' ? 'ascii' : format;
+
                 const treeOutput = await generateTree(process.cwd(), {
                     fancy: userConfig.display.fancy,
-                    useColors: format === 'console' && userConfig.display.useColors,
+                    useColors: !options.output && generatorFormat === 'console' && userConfig.display.useColors,
                     useIcons: userConfig.display.useIcons,
                     showRoot: options.showRoot,
                     showSize: options.showSize,
@@ -280,10 +295,24 @@ function setupCommands(userConfig) {
                     maxDepth: maxDepth !== null && !Number.isNaN(maxDepth) ? maxDepth : Infinity,
                     exclude: userConfig.filtering.exclude,
                     include: userConfig.filtering.include,
-                    format
+                    respectGitignore: options.gitignore !== false,
+                    format: generatorFormat
                 });
 
-                if (format === 'json') {
+                if (options.output) {
+                    let fileContent;
+                    if (format === 'json') {
+                        fileContent = JSON.stringify(treeOutput, null, 2);
+                    } else if (format === 'html') {
+                        fileContent = HTML_TEMPLATE
+                            .replace('{{timestamp}}', new Date().toLocaleString())
+                            .replace('{{content}}', treeOutput);
+                    } else {
+                        fileContent = treeOutput;
+                    }
+                    await fs.writeFile(options.output, fileContent, 'utf8');
+                    console.log(chalk.green(`Tree written to ${options.output}`));
+                } else if (format === 'json') {
                     console.log(JSON.stringify(treeOutput, null, 2));
                 } else {
                     console.log(treeOutput);

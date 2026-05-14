@@ -22,7 +22,8 @@ class ConfigManager {
             filtering: {
                 maxDepth: null,
                 exclude: ['node_modules', '.git', '.DS_Store'],
-                include: ['README.md']
+                include: [],
+                respectGitignore: true
             },
             export: {
                 defaultFormat: 'ascii',

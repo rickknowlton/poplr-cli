@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const chalk = require('chalk');
 const { createSpinner } = require('nanospinner');
+const ignore = require('ignore');
 const TreeStats = require('./utils/stats');
 const { sortItems } = require('./utils/sort');
 
@@ -14,10 +15,12 @@ const { sortItems } = require('./utils/sort');
  * @property {boolean} showRoot - Show root directory
  * @property {boolean} fancy - Use fancy characters
  * @property {Array<string|RegExp>} exclude - Patterns to exclude
+ * @property {Array<string>} [include] - Glob patterns; only matching files are shown
  * @property {boolean} useColors - Use colors in output
  * @property {boolean} showStats - Show directory statistics
  * @property {boolean} useIcons - Show file type icons
  * @property {'name'|'type'|'size'|'extension'|'directory-first'} sortBy - Sort method
+ * @property {boolean} respectGitignore - Automatically exclude entries listed in .gitignore
  */
 
 class TreeGenerator {
@@ -50,12 +53,15 @@ class TreeGenerator {
             useColors: options.useColors && options.format === 'console',
             showStats: options.showStats === true,
             useIcons: options.useIcons === true,
-            sortBy: options.sortBy || 'directory-first'
+            sortBy: options.sortBy || 'directory-first',
+            respectGitignore: options.respectGitignore !== false
         };
 
         this.stats = new TreeStats();
         this.symbols = this.getSymbols();
         this.fileIcons = this.getFileIcons();
+        this.ig = null;
+        this.rootPath = null;
     }
 
     getFileIcons() {
@@ -101,6 +107,17 @@ class TreeGenerator {
             return globRe.test(name);
         }
         return name === pattern;
+    }
+
+    async loadGitignore(rootPath) {
+        if (!this.options.respectGitignore) return null;
+        try {
+            const gitignorePath = path.join(rootPath, '.gitignore');
+            const content = await fs.readFile(gitignorePath, 'utf8');
+            return ignore().add(content);
+        } catch {
+            return null;
+        }
     }
 
     getSymbols() {
@@ -199,6 +216,13 @@ class TreeGenerator {
         }));
 
         const filteredItems = items.filter(item => {
+            if (this.ig) {
+                const itemStat = statsCache.get(item);
+                const relPath = path.relative(this.rootPath, path.join(currentPath, item))
+                    .replace(/\\/g, '/');
+                const igPath = itemStat?.isDirectory ? relPath + '/' : relPath;
+                if (this.ig.ignores(igPath)) return false;
+            }
             const excluded = this.options.exclude.some(pattern => this.matchesPattern(item, pattern));
             if (excluded) return false;
             if (this.options.include) {
@@ -255,6 +279,9 @@ class TreeGenerator {
                 spinner.error({ text: 'Path must be a directory' });
                 throw new Error('Path must be a directory');
             }
+
+            this.rootPath = rootPath;
+            this.ig = await this.loadGitignore(rootPath);
 
             let output = '';
 

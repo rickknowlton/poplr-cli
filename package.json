@@ -1,6 +1,6 @@
 {
     "name": "poplr",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "description": "A flexible and fun directory tree generator",
     "main": "src/tree-generator.js",
     "bin": {
@@ -13,8 +13,7 @@
         "prepare": "husky install",
         "lint": "eslint src/**/*.js",
         "lint:fix": "eslint src/**/*.js --fix",
-        "lint:report": "eslint src/**/*.js --output-file eslint-report.json --format json",
-        "postinstall": "echo '\n🌳 Thanks for installing poplr! Run `poplr` to get started.\n'"
+        "lint:report": "eslint src/**/*.js --output-file eslint-report.json --format json"
     },
     "jest": {
         "testEnvironment": "node",
@@ -58,13 +57,7 @@
     },
     "homepage": "https://github.com/rickknowlton/poplr-cli#readme",
     "dependencies": {
-        "bytes": "^3.1.2",
-        "chalk": "^4.1.2",
-        "commander": "^8.3.0",
-        "figlet": "1.11.0",
-        "ignore": "7.0.5",
-        "inquirer": "^8.2.6",
-        "nanospinner": "1.2.2"
+        "ignore": "7.0.5"
     },
     "devDependencies": {
         "@commitlint/cli": "19.5.0",

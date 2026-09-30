@@ -107,10 +107,15 @@ class ConfigManager {
             showStats: config.display.showStats,
             showRoot: config.display.showRoot,
             fullPath: config.display.fullPath,
-            sortBy: config.sorting.enabled ? config.sorting.default : null,
+            sortBy: config.sorting.enabled ? config.sorting.default : 'name',
             maxDepth: config.filtering.maxDepth,
             exclude: config.filtering.exclude,
-            format: config.export.defaultFormat
+            include: config.filtering.include,
+            respectGitignore: config.filtering.respectGitignore !== false,
+            format: config.export.defaultFormat,
+            fileTypes: config.fileTypes,
+            outputDir: config.export.outputDir,
+            timestamp: config.export.timestamp
         };
     }
 }

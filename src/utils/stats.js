@@ -1,6 +1,17 @@
 const path = require('path');
-const bytes = require('bytes');
-const chalk = require('chalk');
+const { color } = require('./color');
+
+function formatBytes(size) {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let value = Number(size) || 0;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit += 1;
+    }
+    const rounded = unit === 0 ? Math.round(value) : Math.round(value * 10) / 10;
+    return `${rounded}${units[unit]}`;
+}
 
 class TreeStats {
     constructor() {
@@ -40,19 +51,14 @@ class TreeStats {
     }
 
     getSummary(useColors = true) {
-        const c = useColors ? chalk : {
-            bold: (x) => x,
-            blue: (x) => x,
-            green: (x) => x,
-            yellow: (x) => x
-        };
+        const c = color(useColors);
 
         return `
 ${c.bold('Directory Summary')}
 ${c.bold('─'.repeat(30))}
 ${c.blue('Total Files:')} ${this.totalFiles}
 ${c.blue('Total Directories:')} ${this.totalDirs}
-${c.blue('Total Size:')} ${bytes(this.totalSize)}
+${c.blue('Total Size:')} ${formatBytes(this.totalSize)}
 ${c.blue('Max Depth:')} ${this.maxDepthReached} levels
 ${c.blue('Scan Time:')} ${this.getTimeTaken()}s
 

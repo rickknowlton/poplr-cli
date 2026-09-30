@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fileTypes`, `export.outputDir`, and `export.timestamp` from `.poplrrc` are used
 
 ### Removed
-- Runtime dependencies `chalk`, `inquirer`, `figlet`, `bytes`, and `nanospinner`, along with the install-time postinstall script. The published package now depends on `commander` and `ignore`
+- Runtime dependencies `chalk`, `inquirer`, `figlet`, `bytes`, `nanospinner`, and `commander`, along with the install-time postinstall script. The published package now depends on `ignore`
 
 ## [1.2.0] - 2026-05-14
 

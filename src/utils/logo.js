@@ -1,5 +1,4 @@
-const figlet = require('figlet');
-const chalk = require('chalk');
+const { color, colorsEnabled } = require('./color');
 
 const POPLAR_LEAF = `
 
@@ -34,17 +33,9 @@ const POPLAR_LEAF = `
 `;
 
 async function displayLogo() {
-    return new Promise((resolve) => {
-        figlet('poplr', (err, data) => {
-            if (err) {
-                console.log(chalk.green(POPLAR_LEAF));
-            } else {
-                console.log(chalk.green(data));
-                console.log(chalk.green(POPLAR_LEAF));
-            }
-            resolve();
-        });
-    });
+    const paint = color(colorsEnabled());
+    console.log(paint.green('poplr'));
+    console.log(paint.green(POPLAR_LEAF));
 }
 
 module.exports = { displayLogo };

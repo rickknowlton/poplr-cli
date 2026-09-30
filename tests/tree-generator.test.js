@@ -2,14 +2,6 @@ const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
 
-jest.mock('nanospinner', () => ({
-    createSpinner: () => ({
-        start: jest.fn().mockReturnThis(),
-        success: jest.fn(),
-        error: jest.fn()
-    })
-}));
-
 const { TreeGenerator, generateTree } = require('../src/tree-generator');
 
 let tmpDir;
@@ -136,6 +128,93 @@ describe('generateTree', () => {
             exclude: []
         });
         expect(output).not.toContain('index.js');
+    });
+
+    test('maxDepth 1 is the top level and maxDepth 2 includes the next level', async () => {
+        const top = await generateTree(tmpDir, {
+            format: 'ascii',
+            maxDepth: 1,
+            respectGitignore: false,
+            exclude: []
+        });
+        expect(top).toContain('README.md');
+        expect(top).toContain('src/');
+        expect(top).not.toContain('index.js');
+
+        const nested = await generateTree(tmpDir, {
+            format: 'ascii',
+            maxDepth: 2,
+            respectGitignore: false,
+            exclude: []
+        });
+        expect(nested).toContain('index.js');
+    });
+
+    test('nested .gitignore rules are applied', async () => {
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'poplr-nested-'));
+        try {
+            await fs.mkdir(path.join(dir, 'nested'));
+            await fs.writeFile(path.join(dir, 'nested', 'keep.js'), '');
+            await fs.writeFile(path.join(dir, 'nested', 'skip.js'), '');
+            await fs.writeFile(path.join(dir, 'nested', '.gitignore'), 'skip.js\n');
+
+            const output = await generateTree(dir, {
+                format: 'ascii',
+                respectGitignore: true,
+                exclude: []
+            });
+            expect(output).toContain('keep.js');
+            expect(output).not.toContain('skip.js');
+        } finally {
+            await fs.rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    test('symbolic links are shown with @ and are not followed', async () => {
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'poplr-link-'));
+        const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'poplr-link-target-'));
+        try {
+            await fs.writeFile(path.join(dir, 'keep.txt'), 'x');
+            await fs.writeFile(path.join(outside, 'secret.txt'), 'x');
+            await fs.symlink(outside, path.join(dir, 'linked'));
+            await fs.symlink(dir, path.join(dir, 'loop'));
+
+            const output = await generateTree(dir, {
+                format: 'ascii',
+                respectGitignore: false,
+                exclude: []
+            });
+            expect(output).toContain('linked@');
+            expect(output).toContain('loop@');
+            expect(output).not.toContain('secret.txt');
+            expect(output).toContain('keep.txt');
+        } finally {
+            await fs.rm(dir, { recursive: true, force: true });
+            await fs.rm(outside, { recursive: true, force: true });
+        }
+    });
+
+    test('uses fileTypes from options for icon categories', () => {
+        const tg = new TreeGenerator({
+            fileTypes: { code: ['.png'] }
+        });
+        expect(tg.getFileType('photo.png')).toBe('code');
+        expect(tg.getFileType('notes.md')).toBe('default');
+    });
+
+    test('json format does not print a spinner or leading blank line', async () => {
+        const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+        try {
+            const output = await generateTree(tmpDir, {
+                format: 'json',
+                respectGitignore: false
+            });
+            expect(log).not.toHaveBeenCalled();
+            expect(typeof output.tree).toBe('string');
+            expect(output.tree.startsWith('\n')).toBe(false);
+        } finally {
+            log.mockRestore();
+        }
     });
 
     test('json format returns an object', async () => {

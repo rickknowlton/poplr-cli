@@ -1,15 +1,25 @@
 #!/usr/bin/env node
 
-const { program } = require('commander');
-const inquirer = require('inquirer');
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
-const chalk = require('chalk');
 const { generateTree } = require('./tree-generator');
 const { displayLogo } = require('./utils/logo');
 const configManager = require('./utils/config-manager');
+const { color, colorsEnabled } = require('./utils/color');
+const { escapeHtml } = require('./utils/html');
+const { prompt, createInterface } = require('./utils/prompt');
+const {
+    optionWasPassed,
+    resolveFormat,
+    resolveSortBy,
+    resolveRespectGitignore,
+    resolveUseColors
+} = require('./utils/cli-options');
+const { parseCli } = require('./utils/args');
 const pkg = require('../package.json');
+
+const paint = () => color(colorsEnabled());
 
 const FORMATS = {
     console: 'console',
@@ -97,40 +107,62 @@ const HTML_TEMPLATE = `
 </body>
 </html>`;
 
+function renderHtml(content) {
+    return HTML_TEMPLATE
+        .replace('{{timestamp}}', escapeHtml(new Date().toLocaleString()))
+        .replace('{{content}}', escapeHtml(content));
+}
+
 async function writeOutputFile(filename, content, format) {
     try {
         switch (format) {
-        case 'html': {
-            const htmlContent = HTML_TEMPLATE
-                .replace('{{timestamp}}', new Date().toLocaleString())
-                .replace('{{content}}', content);
-            await fs.writeFile(`${filename}.html`, htmlContent);
+        case 'html':
+            await fs.writeFile(`${filename}.html`, renderHtml(content));
             break;
-        }
         case 'json':
             await fs.writeFile(`${filename}.json`, JSON.stringify(content, null, 2));
             break;
         default:
             await fs.writeFile(`${filename}.${format}`, content);
         }
-        console.log(chalk.green(`Tree exported to ${filename}.${format}`));
+        console.log(paint().green(`Tree exported to ${filename}.${format}`));
     } catch (error) {
-        console.error(chalk.red(`Failed to write file: ${error.message}`));
+        console.error(paint().red(`Failed to write file: ${error.message}`));
         throw error;
     }
+}
+
+function treeOptionsFromConfig(userConfig, overrides) {
+    const filtering = userConfig.filtering || DEFAULT_CONFIG.filtering;
+    return {
+        fancy: userConfig.display.fancy,
+        useIcons: userConfig.display.useIcons === true,
+        showStats: userConfig.display.showStats === true,
+        showSize: userConfig.display.showSize === true,
+        fullPath: userConfig.display.fullPath === true,
+        showRoot: userConfig.display.showRoot === true,
+        exclude: filtering.exclude,
+        include: filtering.include,
+        respectGitignore: filtering.respectGitignore !== false,
+        maxDepth: filtering.maxDepth,
+        fileTypes: userConfig.fileTypes,
+        sortBy: resolveSortBy({ sorting: userConfig.sorting }),
+        ...overrides
+    };
 }
 
 /**
  * Handles the custom mode with interactive prompts
  * @param {typeof DEFAULT_CONFIG} userConfig
  */
-async function handleCustomMode(userConfig = DEFAULT_CONFIG) {
+async function handleCustomMode(userConfig = DEFAULT_CONFIG, rl) {
     await displayLogo();
 
     const defaults = userConfig.display || DEFAULT_CONFIG.display;
     const sortingDefaults = userConfig.sorting || DEFAULT_CONFIG.sorting;
+    const exportSettings = userConfig.export || DEFAULT_CONFIG.export;
 
-    const promptConfig = await inquirer.prompt([
+    const promptConfig = await prompt([
         {
             type: 'confirm',
             name: 'fancy',
@@ -172,22 +204,39 @@ async function handleCustomMode(userConfig = DEFAULT_CONFIG) {
             name: 'sortBy',
             message: 'Sort items by:',
             choices: SORT_TYPES,
-            default: sortingDefaults.default
+            default: sortingDefaults.enabled === false ? 'name' : sortingDefaults.default
         }
-    ]);
+    ], rl);
 
-    const treeOutput = await generateTree(process.cwd(), {
-        ...promptConfig,
-        format: FORMATS[promptConfig.exportFormat]
-    });
+    const generatorFormat = FORMATS[promptConfig.exportFormat];
+    const treeOutput = await generateTree(process.cwd(), treeOptionsFromConfig(userConfig, {
+        fancy: promptConfig.fancy,
+        showSize: promptConfig.showSize,
+        showStats: promptConfig.showStats,
+        fullPath: promptConfig.fullPath,
+        useIcons: promptConfig.useIcons,
+        sortBy: promptConfig.sortBy,
+        useColors: resolveUseColors({
+            writingFile: promptConfig.exportFormat !== 'console',
+            format: generatorFormat,
+            configured: defaults.useColors
+        }) && colorsEnabled(),
+        format: generatorFormat
+    }));
 
     if (promptConfig.exportFormat === 'console') {
         console.log(treeOutput);
-    } else {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `tree-${timestamp}`;
-        await writeOutputFile(filename, treeOutput, promptConfig.exportFormat);
+        return;
     }
+
+    const outputDir = exportSettings.outputDir || './';
+    let basename = 'tree';
+    if (exportSettings.timestamp) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        basename = `tree-${timestamp}`;
+    }
+    await fs.mkdir(outputDir, { recursive: true });
+    await writeOutputFile(path.join(outputDir, basename), treeOutput, promptConfig.exportFormat);
 }
 
 /**
@@ -196,25 +245,17 @@ async function handleCustomMode(userConfig = DEFAULT_CONFIG) {
  */
 async function handleQuickTree(config) {
     try {
-        const quickConfig = {
+        const tree = await generateTree(process.cwd(), treeOptionsFromConfig(config, {
             format: 'console',
-            useIcons: config.display.useIcons === true,
-            useColors: config.display.useColors === true,
-            showStats: config.display.showStats === true,
-            showSize: config.display.showSize === true,
-            fullPath: config.display.fullPath === true,
-            showRoot: config.display.showRoot === true,
-            fancy: config.display.fancy !== false,
-            exclude: config.filtering.exclude,
-            include: config.filtering.include,
-            respectGitignore: config.filtering.respectGitignore !== false,
-            sortBy: config.sorting.default
-        };
-
-        const tree = await generateTree(process.cwd(), quickConfig);
+            useColors: resolveUseColors({
+                writingFile: false,
+                format: 'console',
+                configured: config.display.useColors
+            }) && colorsEnabled()
+        }));
         console.log(tree);
     } catch (error) {
-        console.error(chalk.red('Error generating tree:'), error.message);
+        console.error(paint().red('Error generating tree:'), error.message);
         if (process.env.DEBUG) {
             console.error(error.stack);
         }
@@ -222,106 +263,116 @@ async function handleQuickTree(config) {
     }
 }
 
+async function runInit(options) {
+    try {
+        const configPath = options.global
+            ? path.join(os.homedir(), '.poplrrc')
+            : path.join(process.cwd(), '.poplrrc');
+
+        await configManager.createDefaultConfig(configPath);
+        console.log(paint().green(`Created configuration file at ${configPath}`));
+    } catch (error) {
+        console.error(paint().red('Failed to create configuration file:'), error.message);
+        process.exit(1);
+    }
+}
+
+async function runTree(userConfig, options) {
+    try {
+        const formatExplicit = optionWasPassed(process.argv, ['-f', '--format']);
+        const format = resolveFormat({
+            explicitFormat: formatExplicit ? options.format : null,
+            outputPath: options.output,
+            defaultFormat: userConfig.export.defaultFormat
+        });
+        const generatorFormat = format === 'html' ? 'ascii' : format;
+        const depthExplicit = optionWasPassed(process.argv, ['-d', '--max-depth']);
+        const maxDepth = depthExplicit ? Number(options.maxDepth) : userConfig.filtering.maxDepth;
+        const sortExplicit = optionWasPassed(process.argv, ['--sort']);
+
+        const treeOutput = await generateTree(process.cwd(), {
+            fancy: userConfig.display.fancy,
+            useColors: resolveUseColors({
+                writingFile: Boolean(options.output),
+                format: generatorFormat,
+                configured: userConfig.display.useColors
+            }) && colorsEnabled(),
+            useIcons: userConfig.display.useIcons,
+            showRoot: options.showRoot,
+            showSize: options.showSize,
+            fullPath: options.fullPath,
+            showStats: options.stats,
+            sortBy: resolveSortBy({
+                explicitSort: sortExplicit ? options.sort : null,
+                sorting: userConfig.sorting
+            }),
+            maxDepth,
+            exclude: userConfig.filtering.exclude,
+            include: userConfig.filtering.include,
+            respectGitignore: resolveRespectGitignore({
+                disabledByFlag: options.gitignore === false,
+                configured: userConfig.filtering.respectGitignore
+            }),
+            fileTypes: userConfig.fileTypes,
+            format: generatorFormat
+        });
+
+        if (options.output) {
+            let fileContent;
+            if (format === 'json') {
+                fileContent = JSON.stringify(treeOutput, null, 2);
+            } else if (format === 'html') {
+                fileContent = renderHtml(treeOutput);
+            } else {
+                fileContent = treeOutput;
+            }
+            await fs.writeFile(options.output, fileContent, 'utf8');
+            console.log(paint().green(`Tree written to ${options.output}`));
+        } else if (format === 'json') {
+            console.log(JSON.stringify(treeOutput, null, 2));
+        } else {
+            console.log(treeOutput);
+        }
+    } catch (error) {
+        console.error(paint().red('Error:'), error.message);
+        process.exit(1);
+    }
+}
+
 /**
- * Sets up and handles CLI commands
  * @param {typeof DEFAULT_CONFIG} userConfig
+ * @returns {Promise<boolean>} true when a command, help, or version request was handled
  */
-function setupCommands(userConfig) {
-    program
-        .version(pkg.version)
-        .description('A flexible and fun directory tree generator');
+async function runCommand(userConfig) {
+    const parsed = parseCli(process.argv, {
+        showSize: userConfig.display.showSize,
+        fullPath: userConfig.display.fullPath,
+        showRoot: userConfig.display.showRoot,
+        stats: userConfig.display.showStats
+    });
 
-    program
-        .command('init')
-        .description('Create a new .poplrrc configuration file')
-        .option('-g, --global', 'Create in home directory (global)')
-        .action(async (options) => {
-            try {
-                const configPath = options.global
-                    ? path.join(os.homedir(), '.poplrrc')
-                    : path.join(process.cwd(), '.poplrrc');
+    if (parsed.interactive) return false;
+    if (parsed.helpText) {
+        console.log(parsed.helpText);
+        return true;
+    }
+    if (parsed.version) {
+        console.log(pkg.version);
+        return true;
+    }
+    if (parsed.error) {
+        console.error(parsed.error);
+        process.exit(1);
+    }
 
-                await configManager.createDefaultConfig(configPath);
-                console.log(chalk.green(`Created configuration file at ${configPath}`));
-            } catch (error) {
-                console.error(chalk.red('Failed to create configuration file:'), error.message);
-                process.exit(1);
-            }
-        });
+    if (parsed.command === 'init') {
+        await runInit(parsed.options);
+    } else if (parsed.command === 'config') {
+        console.log('Current configuration:');
+        console.log(JSON.stringify(userConfig, null, 2));
+    } else if (parsed.command === 'tree') await runTree(userConfig, parsed.options);
 
-    program
-        .command('config')
-        .description('Show current configuration')
-        .action(async () => {
-            console.log('Current configuration:');
-            console.log(JSON.stringify(userConfig, null, 2));
-        });
-
-    program
-        .command('tree')
-        .description('Generate a directory tree')
-        .option('-f, --format <type>', 'output format (ascii, markdown, json, html)', userConfig.export.defaultFormat)
-        .option('-o, --output <path>', 'write output to a file (format inferred from extension if -f not set)')
-        .option('-d, --max-depth <number>', 'maximum depth to traverse', userConfig.filtering.maxDepth)
-        .option('-s, --show-size', 'show file sizes', userConfig.display.showSize)
-        .option('-p, --full-path', 'show full paths', userConfig.display.fullPath)
-        .option('-r, --show-root', 'show root directory', userConfig.display.showRoot)
-        .option('--stats', 'show directory summary', userConfig.display.showStats)
-        .option('--sort <type>', 'sort by (name, type, size, extension, directory-first)', userConfig.sorting.default)
-        .option('--no-gitignore', 'do not respect .gitignore rules')
-        .action(async (options) => {
-            try {
-                const maxDepth = options.maxDepth != null ? Number(options.maxDepth) : null;
-
-                let format = options.format || userConfig.export.defaultFormat || 'ascii';
-                if (options.output && !options.format) {
-                    const ext = path.extname(options.output).slice(1).toLowerCase();
-                    const extMap = { md: 'markdown', json: 'json', html: 'html', txt: 'ascii' };
-                    if (extMap[ext]) format = extMap[ext];
-                }
-
-                // HTML is a post-processing wrapper around plain ASCII output
-                const generatorFormat = format === 'html' ? 'ascii' : format;
-
-                const treeOutput = await generateTree(process.cwd(), {
-                    fancy: userConfig.display.fancy,
-                    useColors: !options.output && generatorFormat === 'console' && userConfig.display.useColors,
-                    useIcons: userConfig.display.useIcons,
-                    showRoot: options.showRoot,
-                    showSize: options.showSize,
-                    fullPath: options.fullPath,
-                    showStats: options.stats,
-                    sortBy: options.sort || userConfig.sorting.default,
-                    maxDepth: maxDepth !== null && !Number.isNaN(maxDepth) ? maxDepth : Infinity,
-                    exclude: userConfig.filtering.exclude,
-                    include: userConfig.filtering.include,
-                    respectGitignore: options.gitignore !== false,
-                    format: generatorFormat
-                });
-
-                if (options.output) {
-                    let fileContent;
-                    if (format === 'json') {
-                        fileContent = JSON.stringify(treeOutput, null, 2);
-                    } else if (format === 'html') {
-                        fileContent = HTML_TEMPLATE
-                            .replace('{{timestamp}}', new Date().toLocaleString())
-                            .replace('{{content}}', treeOutput);
-                    } else {
-                        fileContent = treeOutput;
-                    }
-                    await fs.writeFile(options.output, fileContent, 'utf8');
-                    console.log(chalk.green(`Tree written to ${options.output}`));
-                } else if (format === 'json') {
-                    console.log(JSON.stringify(treeOutput, null, 2));
-                } else {
-                    console.log(treeOutput);
-                }
-            } catch (error) {
-                console.error(chalk.red('Error:'), error.message);
-                process.exit(1);
-            }
-        });
+    return true;
 }
 
 async function main() {
@@ -329,48 +380,52 @@ async function main() {
     try {
         userConfig = await configManager.loadConfig();
     } catch (error) {
-        console.warn(chalk.yellow('Failed to load configuration, using defaults'));
+        console.warn(paint().yellow('Failed to load configuration, using defaults'));
         userConfig = DEFAULT_CONFIG;
     }
 
-    setupCommands(userConfig);
+    const handled = await runCommand(userConfig);
+    if (handled) return;
 
     if (process.argv.length === 2) {
-        const { mode } = await inquirer.prompt([
-            {
-                type: 'list',
-                name: 'mode',
-                message: 'What would you like to do?',
-                choices: [
-                    { name: 'Quick tree (default settings)', value: 'quick' },
-                    { name: 'Custom tree (with export options)', value: 'custom' },
-                    { name: 'About poplr', value: 'about' },
-                    { name: 'Exit', value: 'exit' }
-                ]
-            }
-        ]);
+        const rl = createInterface();
+        try {
+            const { mode } = await prompt([
+                {
+                    type: 'list',
+                    name: 'mode',
+                    message: 'What would you like to do?',
+                    choices: [
+                        { name: 'Quick tree (default settings)', value: 'quick' },
+                        { name: 'Custom tree (with export options)', value: 'custom' },
+                        { name: 'About poplr', value: 'about' },
+                        { name: 'Exit', value: 'exit' }
+                    ]
+                }
+            ], rl);
 
-        switch (mode) {
-        case 'quick':
-            await handleQuickTree(userConfig);
-            break;
-        case 'custom':
-            await handleCustomMode(userConfig);
-            break;
-        case 'about':
-            console.log(chalk.blue('\nPoplr - A flexible and fun directory tree generator'));
-            console.log('Version:', chalk.green(pkg.version));
-            break;
-        case 'exit':
-            process.exit(0);
+            switch (mode) {
+            case 'quick':
+                await handleQuickTree(userConfig);
+                break;
+            case 'custom':
+                await handleCustomMode(userConfig, rl);
+                break;
+            case 'about':
+                console.log(paint().blue('\nPoplr - A flexible and fun directory tree generator'));
+                console.log('Version:', paint().green(pkg.version));
+                break;
+            case 'exit':
+                process.exit(0);
+            }
+        } finally {
+            rl.close();
         }
-    } else {
-        program.parse(process.argv);
     }
 }
 
 process.on('unhandledRejection', (error) => {
-    console.error(chalk.red('Unhandled error:'), error.message);
+    console.error(paint().red('Unhandled error:'), error.message);
     if (process.env.DEBUG) {
         console.error(error);
     }
@@ -378,7 +433,7 @@ process.on('unhandledRejection', (error) => {
 });
 
 main().catch((error) => {
-    console.error(chalk.red('Fatal error:'), error.message);
+    console.error(paint().red('Fatal error:'), error.message);
     if (process.env.DEBUG) {
         console.error(error);
     }

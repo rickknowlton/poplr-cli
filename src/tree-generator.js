@@ -1,15 +1,23 @@
 const fs = require('fs').promises;
 const path = require('path');
-const chalk = require('chalk');
-const { createSpinner } = require('nanospinner');
 const ignore = require('ignore');
+const { color } = require('./utils/color');
 const TreeStats = require('./utils/stats');
 const { sortItems } = require('./utils/sort');
+
+const DEFAULT_FILE_TYPES = {
+    image: ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp'],
+    video: ['.mp4', '.mov', '.avi', '.mkv', '.webm'],
+    audio: ['.mp3', '.wav', '.ogg', '.m4a'],
+    archive: ['.zip', '.rar', '.7z', '.tar', '.gz'],
+    pdf: ['.pdf'],
+    code: ['.js', '.ts', '.py', '.java', '.cpp', '.html', '.css', '.json', '.xml']
+};
 
 /**
  * @typedef {Object} TreeGeneratorOptions
  * @property {'ascii'|'markdown'|'json'|'console'} format - Output format
- * @property {number|null} maxDepth - Maximum depth to traverse
+ * @property {number|null} maxDepth - Levels from the root. 1 is the top level.
  * @property {boolean} showSize - Show file sizes
  * @property {boolean} fullPath - Show full paths
  * @property {boolean} showRoot - Show root directory
@@ -21,6 +29,7 @@ const { sortItems } = require('./utils/sort');
  * @property {boolean} useIcons - Show file type icons
  * @property {'name'|'type'|'size'|'extension'|'directory-first'} sortBy - Sort method
  * @property {boolean} respectGitignore - Automatically exclude entries listed in .gitignore
+ * @property {Object<string, string[]>} [fileTypes] - Extension groups used for icons
  */
 
 class TreeGenerator {
@@ -37,8 +46,10 @@ class TreeGenerator {
             throw new Error(`Invalid sort type: ${options.sortBy}. Must be one of: ${validSortTypes.join(', ')}`);
         }
 
+        const format = options.format || 'ascii';
+
         this.options = {
-            format: options.format || 'ascii',
+            format,
             maxDepth: options.maxDepth != null && !Number.isNaN(Number(options.maxDepth))
                 ? Number(options.maxDepth)
                 : Infinity,
@@ -50,17 +61,19 @@ class TreeGenerator {
             include: Array.isArray(options.include) && options.include.length > 0
                 ? options.include
                 : null,
-            useColors: options.useColors && options.format === 'console',
+            useColors: options.useColors === true && (format === 'console' || format === 'ascii'),
             showStats: options.showStats === true,
             useIcons: options.useIcons === true,
             sortBy: options.sortBy || 'directory-first',
-            respectGitignore: options.respectGitignore !== false
+            respectGitignore: options.respectGitignore !== false,
+            fileTypes: options.fileTypes || DEFAULT_FILE_TYPES
         };
 
         this.stats = new TreeStats();
         this.symbols = this.getSymbols();
         this.fileIcons = this.getFileIcons();
-        this.ig = null;
+        this.ignoreMap = new Map();
+        this.visited = new Set();
         this.rootPath = null;
     }
 
@@ -84,17 +97,10 @@ class TreeGenerator {
      */
     getFileType(filename) {
         const ext = path.extname(filename).toLowerCase();
-        const fileTypeMap = {
-            image: ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp'],
-            video: ['.mp4', '.mov', '.avi', '.mkv', '.webm'],
-            audio: ['.mp3', '.wav', '.ogg', '.m4a'],
-            archive: ['.zip', '.rar', '.7z', '.tar', '.gz'],
-            pdf: ['.pdf'],
-            code: ['.js', '.ts', '.py', '.java', '.cpp', '.html', '.css', '.json', '.xml']
-        };
+        const fileTypeMap = this.options.fileTypes || DEFAULT_FILE_TYPES;
 
         for (const [type, extensions] of Object.entries(fileTypeMap)) {
-            if (extensions.includes(ext)) return type;
+            if (Array.isArray(extensions) && extensions.includes(ext)) return type;
         }
         return 'default';
     }
@@ -109,15 +115,39 @@ class TreeGenerator {
         return name === pattern;
     }
 
-    async loadGitignore(rootPath) {
-        if (!this.options.respectGitignore) return null;
+    async loadIgnoreFor(dirPath) {
+        if (!this.options.respectGitignore) return;
+        if (this.ignoreMap.has(dirPath)) return;
         try {
-            const gitignorePath = path.join(rootPath, '.gitignore');
-            const content = await fs.readFile(gitignorePath, 'utf8');
-            return ignore().add(content);
+            const content = await fs.readFile(path.join(dirPath, '.gitignore'), 'utf8');
+            this.ignoreMap.set(dirPath, ignore().add(content));
         } catch {
-            return null;
+            this.ignoreMap.set(dirPath, null);
         }
+    }
+
+    isIgnored(absPath, isDirectory) {
+        if (!this.options.respectGitignore || !this.rootPath) return false;
+
+        const relFromRoot = path.relative(this.rootPath, absPath).split(path.sep).join('/');
+        if (!relFromRoot || relFromRoot.startsWith('..')) return false;
+
+        const segments = relFromRoot.split('/');
+        let dir = this.rootPath;
+
+        for (let i = 0; i < segments.length; i++) {
+            const ig = this.ignoreMap.get(dir);
+            if (ig) {
+                const rel = segments.slice(i).join('/');
+                const candidate = isDirectory ? `${rel}/` : rel;
+                if (ig.ignores(candidate)) return true;
+            }
+            if (i < segments.length - 1) {
+                dir = path.join(dir, segments[i]);
+            }
+        }
+
+        return false;
     }
 
     getSymbols() {
@@ -146,11 +176,11 @@ class TreeGenerator {
 
     /**
      * @param {string} itemPath
-     * @returns {Promise<{ isDirectory: boolean, sizeStr: string, size: number }>}
+     * @returns {Promise<{ isDirectory: boolean, isSymbolicLink: boolean, sizeStr: string, size: number, id: string|null }>}
      */
     async getItemStats(itemPath) {
         try {
-            const stats = await fs.stat(itemPath);
+            const stats = await fs.lstat(itemPath);
             let sizeStr = '';
 
             if (this.options.showSize && stats.isFile()) {
@@ -164,13 +194,21 @@ class TreeGenerator {
 
             return {
                 isDirectory: stats.isDirectory(),
+                isSymbolicLink: stats.isSymbolicLink(),
                 sizeStr,
-                size: stats.size
+                size: stats.size,
+                id: `${stats.dev}:${stats.ino}`
             };
         } catch (error) {
             if (error.code === 'ENOENT') {
                 console.warn(`Warning: ${itemPath} not found or inaccessible`);
-                return { isDirectory: false, sizeStr: '', size: 0 };
+                return {
+                    isDirectory: false,
+                    isSymbolicLink: false,
+                    sizeStr: '',
+                    size: 0,
+                    id: null
+                };
             }
             throw error;
         }
@@ -181,23 +219,27 @@ class TreeGenerator {
         let icon = '';
 
         if (this.options.useIcons) {
-            icon = itemStats.isDirectory ?
-                this.fileIcons.directory :
-                this.fileIcons[this.getFileType(item)];
-            icon += ' ';
+            const type = itemStats.isDirectory ? 'directory' : this.getFileType(item);
+            icon = `${this.fileIcons[type] || this.fileIcons.default} `;
         }
 
-        const itemStr = this.options.format === 'markdown'
-            ? `${prefix}${symbols.branch} ${icon}${item}${itemStats.isDirectory ? '/' : ''}${itemStats.sizeStr}`
-            : `${prefix}${isLast ? symbols.last : symbols.branch} ${icon}${item}${itemStats.isDirectory ? '/' : ''}${itemStats.sizeStr}`;
+        let suffix = '';
+        if (itemStats.isSymbolicLink) suffix = '@';
+        else if (itemStats.isDirectory) suffix = '/';
+
+        const connector = this.options.format === 'markdown'
+            ? symbols.branch
+            : (isLast ? symbols.last : symbols.branch);
+        const itemStr = `${prefix}${connector} ${icon}${item}${suffix}${itemStats.sizeStr}`;
 
         return this.options.useColors && itemStats.isDirectory
-            ? chalk.blue(itemStr)
+            ? color(true).blue(itemStr)
             : itemStr;
     }
 
     async generateTreeNode(currentPath, prefix = '', depth = 0) {
-        if (depth > this.options.maxDepth) return '';
+        // maxDepth counts levels from the root: 1 is the top level.
+        if (depth >= this.options.maxDepth) return '';
 
         let output = '';
         let items;
@@ -209,6 +251,8 @@ class TreeGenerator {
             return '';
         }
 
+        await this.loadIgnoreFor(currentPath);
+
         const statsCache = new Map();
         await Promise.all(items.map(async (item) => {
             const itemPath = path.join(currentPath, item);
@@ -216,17 +260,12 @@ class TreeGenerator {
         }));
 
         const filteredItems = items.filter(item => {
-            if (this.ig) {
-                const itemStat = statsCache.get(item);
-                const relPath = path.relative(this.rootPath, path.join(currentPath, item))
-                    .replace(/\\/g, '/');
-                const igPath = itemStat?.isDirectory ? relPath + '/' : relPath;
-                if (this.ig.ignores(igPath)) return false;
-            }
+            const itemPath = path.join(currentPath, item);
+            const itemStat = statsCache.get(item);
+            if (this.isIgnored(itemPath, Boolean(itemStat?.isDirectory))) return false;
             const excluded = this.options.exclude.some(pattern => this.matchesPattern(item, pattern));
             if (excluded) return false;
             if (this.options.include) {
-                const itemStat = statsCache.get(item);
                 if (!itemStat.isDirectory) {
                     return this.options.include.some(pattern => this.matchesPattern(item, pattern));
                 }
@@ -256,6 +295,11 @@ class TreeGenerator {
             output += this.formatItem(displayName, isLast, prefix, itemStat) + '\n';
 
             if (itemStat.isDirectory) {
+                if (itemStat.id && this.visited.has(itemStat.id)) {
+                    continue;
+                }
+                if (itemStat.id) this.visited.add(itemStat.id);
+
                 const newPrefix = this.options.format === 'markdown'
                     ? prefix + this.symbols.indent
                     : prefix + (isLast ? this.symbols.indent : this.symbols.pipe + '   ');
@@ -271,51 +315,42 @@ class TreeGenerator {
             throw new Error('Root path is required');
         }
 
-        const spinner = createSpinner('Analyzing directory structure...').start();
+        const stats = await fs.stat(rootPath);
+        if (!stats.isDirectory()) {
+            throw new Error('Path must be a directory');
+        }
 
-        try {
-            const stats = await fs.stat(rootPath);
-            if (!stats.isDirectory()) {
-                spinner.error({ text: 'Path must be a directory' });
-                throw new Error('Path must be a directory');
-            }
+        this.rootPath = path.resolve(rootPath);
+        this.visited = new Set([`${stats.dev}:${stats.ino}`]);
+        this.ignoreMap = new Map();
+        await this.loadIgnoreFor(this.rootPath);
 
-            this.rootPath = rootPath;
-            this.ig = await this.loadGitignore(rootPath);
+        let output = '';
 
-            let output = '';
+        if (this.options.showRoot) {
+            const rootName = this.options.fullPath ? this.rootPath : path.basename(this.rootPath);
+            const rootStr = `${rootName}/\n`;
+            output += this.options.useColors ? color(true).blue(rootStr) : rootStr;
+        }
 
-            if (this.options.showRoot) {
-                const rootName = this.options.fullPath ? rootPath : path.basename(rootPath);
-                const rootStr = `${rootName}/\n`;
-                output += this.options.useColors ? chalk.blue(rootStr) : rootStr;
-            }
+        output += await this.generateTreeNode(this.rootPath);
 
-            output += await this.generateTreeNode(rootPath);
+        if (this.options.showStats && this.options.format !== 'json') {
+            output += '\n' + this.stats.getSummary(this.options.useColors);
+        }
 
-            if (this.options.showStats && this.options.format !== 'json') {
-                output += '\n' + this.stats.getSummary(this.options.useColors);
-            }
-
-            spinner.success({ text: 'Directory tree generated!' });
-            console.log('');
-
-            switch (this.options.format) {
-            case 'markdown':
-                return `## Directory Structure\n\n${output}`;
-            case 'json':
-                return {
-                    generated: new Date().toISOString(),
-                    config: { ...this.options },
-                    tree: output,
-                    stats: this.options.showStats ? this.stats.getStatsObject() : undefined
-                };
-            default:
-                return output;
-            }
-        } catch (error) {
-            spinner.error({ text: `Failed to generate tree: ${error.message}` });
-            throw error;
+        switch (this.options.format) {
+        case 'markdown':
+            return `## Directory Structure\n\n${output}`;
+        case 'json':
+            return {
+                generated: new Date().toISOString(),
+                config: { ...this.options },
+                tree: output,
+                stats: this.options.showStats ? this.stats.getStatsObject() : undefined
+            };
+        default:
+            return output;
         }
     }
 }

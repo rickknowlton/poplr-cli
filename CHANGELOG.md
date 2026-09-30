@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-09-30
+
+### Fixed
+- `poplr tree -o` infers the format from the file extension (`.md`, `.json`, `.html`, `.txt`) unless `-f` is set
+- `poplr tree` applies `display.useColors` on stdout, and honors `filtering.respectGitignore`, `filtering.exclude`, `filtering.include`, `filtering.maxDepth`, and `sorting.enabled` from `.poplrrc`
+- Custom mode uses the same filters, file types, and export directory settings as the config file
+- `-d` counts levels from the root, so `-d 1` is the top level and `-d 2` is two levels deep
+- JSON output is a single document with no spinner or leading blank line
+- HTML export escapes file names before inserting them into the page
+
+### Changed
+- Nested `.gitignore` files are applied, and directory cycles are not walked
+- Symbolic links are shown with a trailing `@` and are not followed
+- `fileTypes`, `export.outputDir`, and `export.timestamp` from `.poplrrc` are used
+
+### Removed
+- Runtime dependencies `chalk`, `inquirer`, `figlet`, `bytes`, and `nanospinner`, along with the install-time postinstall script. The published package now depends on `commander` and `ignore`
+
 ## [1.2.0] - 2026-05-14
 
 ### Added

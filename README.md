@@ -23,7 +23,7 @@ poplr tree
 - 📁 Clean, customizable directory tree visualization
 - 🎨 Multiple output formats (Console, Markdown, JSON, HTML, Text)
 - 🔍 Smart sorting (directories first, by name, size, type, or extension)
-- 🚫 Automatic `.gitignore` respect - ignored files stay out of the tree
+- 🚫 Automatic `.gitignore` respect, including nested `.gitignore` files
 - 🎯 File and directory filtering via exclude and include patterns (supports globs)
 - 📂 Write output directly to a file with `-o`
 - ⚙️ Configurable through `.poplrrc` files (local and global)
@@ -140,7 +140,15 @@ poplr config
 
 **`filtering.include`** - when non-empty, only files matching these patterns are shown; directories always pass through so the tree structure is preserved.
 
-**`filtering.respectGitignore`** - when `true` (the default), entries listed in `.gitignore` are automatically excluded.
+**`filtering.respectGitignore`** - when `true` (the default), entries listed in `.gitignore` are automatically excluded. Rules are read from the root `.gitignore` and from `.gitignore` files in subdirectories.
+
+Symbolic links are listed with a trailing `@` and are not followed.
+
+**`sorting.enabled`** - when `false`, entries are listed by name.
+
+**`export.outputDir`** and **`export.timestamp`** - custom exports are written to `outputDir`. A timestamp is added to the file name when `timestamp` is `true`.
+
+**`fileTypes`** - extension groups used for file icons.
 
 ### Output Formats
 

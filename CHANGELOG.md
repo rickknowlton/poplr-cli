@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-05-14
+
+### Added
+- `.gitignore` support: entries in `.gitignore` are now automatically excluded from the tree by default; pass `--no-gitignore` to opt out
+- `--output` / `-o` flag on `poplr tree` to write the tree directly to a file (format is inferred from the file extension - `.md`, `.json`, `.html`, `.txt` - or set explicitly with `-f`)
+- Full Jest test suite covering `TreeStats`, `sortItems`, config merging, `matchesPattern`, and end-to-end tree generation
+- `filtering.respectGitignore` config option in `.poplrrc`
+
+### Updated
+- `prepublishOnly` now also runs `npm run lint` in addition to tests
+
 ## [1.1.0] - 2026-05-12
 
 ### Fixed
@@ -17,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Glob pattern support for `exclude` entries in `.poplrrc` (e.g. `*.log`, `build-*` now work as expected)
-- `filtering.include` from config is now applied — only matching files are shown (directories always pass through)
+- `filtering.include` from config is now applied - only matching files are shown (directories always pass through)
 
 ### Updated
 - `figlet` dependency updated to 1.11.0
